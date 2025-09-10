@@ -23,7 +23,7 @@ namespace DuneRef_PeopleMover
             // this is used as an entry level pathCost calculator which the game caches. updated on game load and terrain change.
             Harm.Patch(AccessTools.Method(typeof(PathGrid), "CalculatedCostAt"), transpiler: new HarmonyMethod(patchType, nameof(ChangePathCostInRepeaterSection)));
             Harm.Patch(AccessTools.Method(typeof(PathGrid), "CalculatedCostAt"), transpiler: new HarmonyMethod(patchType, nameof(ChangePathCostInSnowSection)));
-
+            
             // Patch CostToMoveIntoCell for changing speed of pawn on the mover
             Harm.Patch(
                 AccessTools.Method(
@@ -32,13 +32,13 @@ namespace DuneRef_PeopleMover
                     new Type[] { typeof(Pawn), typeof(IntVec3) }
                 ), 
                 transpiler: new HarmonyMethod(patchType, nameof(ChangePathCostInEdificeSection)));
-
+            
             // Patch PathFinder to prioritize moving on correct direction movers, and do the opposite when not the correct direction.
             Harm.Patch(
                 AccessTools.Method(
                     typeof(PathFinder),
-                    "FindPath",
-                    new Type[] { typeof(IntVec3), typeof(LocalTargetInfo), typeof(TraverseParms), typeof(PathEndMode), typeof(PathFinderCostTuning) }
+                    "FindPathNow",
+                    new Type[] { typeof(IntVec3), typeof(LocalTargetInfo), typeof(TraverseParms), typeof(PathFinderCostTuning?), typeof(PathEndMode), typeof(PathRequest.IPathGridCustomizer) }
                 ),
                 transpiler: new HarmonyMethod(patchType, nameof(ChangePathCostForMover)));
 
@@ -46,8 +46,8 @@ namespace DuneRef_PeopleMover
             Harm.Patch(
                 AccessTools.Method(
                     typeof(PathFinder),
-                    "FindPath",
-                    new Type[] { typeof(IntVec3), typeof(LocalTargetInfo), typeof(TraverseParms), typeof(PathEndMode), typeof(PathFinderCostTuning) }
+                    "FindPathNow",
+                    new Type[] { typeof(IntVec3), typeof(LocalTargetInfo), typeof(TraverseParms), typeof(PathFinderCostTuning?), typeof(PathEndMode), typeof(PathRequest.IPathGridCustomizer) }
                 ),
                 transpiler: new HarmonyMethod(patchType, nameof(PrintPathFinderInfo)));
 
@@ -58,7 +58,7 @@ namespace DuneRef_PeopleMover
 
             /* Patch in my new PeopleMoverPowerComp into ConnectToPower */
             Harm.Patch(AccessTools.Method(typeof(ThingDef), "get_ConnectToPower"), postfix: new HarmonyMethod(patchType, nameof(AddPowerCompToConnectionListPostfix)));
-
+            
             /* Patch to clear mapcache on going to main menu or loading */
             Harm.Patch(AccessTools.Method(typeof(MemoryUtility), nameof(MemoryUtility.ClearAllMapsAndWorld)), postfix: new HarmonyMethod(patchType, nameof(ClearAllMapsAndWorldPostfix)));
         }
@@ -145,17 +145,21 @@ namespace DuneRef_PeopleMover
             try
             {
                 CodeMatch[] desiredInstructions = new CodeMatch[]{
-                    // IL_00c8: ble.s IL_00cd
+                    // IL_011d: ble.s IL_0122
                     new CodeMatch(i => i.opcode == OpCodes.Ble_S),
-                    // IL_00ca: ldloc.s 7
+                    // IL_011f: ldloc.s 9
                     new CodeMatch(i => i.opcode == OpCodes.Ldloc_S),
-                    // IL_00cc: stloc.0
+                    // IL_0121: stloc.0
                     new CodeMatch(i => i.opcode == OpCodes.Stloc_0),
-                    // IL_00cd: ldloc.s 6
+                    // IL_0122: ldloc.s 6
                     new CodeMatch(i => i.opcode == OpCodes.Ldloc_S),
-                    // IL_00cf: isinst RimWorld.Building_Door
+                    // IL_0124: isinst RimWorld.Building_Door
                     new CodeMatch(i => i.opcode == OpCodes.Isinst),
-                    // IL_00d4: brfalse.s IL_00fc
+                    // IL_0129: stloc.s 7
+                    new CodeMatch(i => i.opcode == OpCodes.Stloc_S),
+                    // IL_012b: ldloc.s 7
+                    new CodeMatch(i => i.opcode == OpCodes.Ldloc_S),
+                    // IL_012d: brfalse.s IL_0163
                     new CodeMatch(i => i.opcode == OpCodes.Brfalse_S),
                 };
 
@@ -164,7 +168,7 @@ namespace DuneRef_PeopleMover
                     .MatchStartForward(desiredInstructions)
                     .ThrowIfInvalid("Couldn't find the desired instructions")
                     .RemoveInstructions(3)
-                    .Insert(new CodeInstruction(OpCodes.Ldloc_S, 6))
+                    .Insert(new CodeInstruction(OpCodes.Ldloc_S, 8))
                     .Advance(1)
                     .Insert(new CodeInstruction(OpCodes.Call, AccessTools.Method(patchType, nameof(VanillaPatches.ChangePathCostInRepeaterSectionFn))))
                     .Advance(1)
@@ -202,19 +206,19 @@ namespace DuneRef_PeopleMover
             try
             {
                 CodeMatch[] desiredInstructions = new CodeMatch[]{
-                    // IL_011b: callvirt instance valuetype Verse.SnowCategory Verse.SnowGrid::GetCategory(valuetype Verse.IntVec3)
+                    // IL_0182: callvirt instance valuetype Verse.WeatherBuildupCategory Verse.SnowGrid::GetCategory(valuetype Verse.IntVec3)
                     new CodeMatch(i => i.opcode == OpCodes.Callvirt),
-                    // IL_0120: call int32 Verse.SnowUtility::MovementTicksAddOn(valuetype Verse.SnowCategory)
+                    // IL_0187: call int32 Verse.WeatherBuildupUtility::MovementTicksAddOn(valuetype Verse.WeatherBuildupCategory)
                     new CodeMatch(i => i.opcode == OpCodes.Call),
-                    // IL_0125: stloc.s 4
+                    // IL_018c: stloc.s 4
                     new CodeMatch(i => i.opcode == OpCodes.Stloc_S),
-                    // IL_0127: ldloc.s 4
+                    // IL_018e: ldloc.s 4
                     new CodeMatch(i => i.opcode == OpCodes.Ldloc_S),
-                    // IL_0129: ldloc.0
+                    // IL_0190: ldloc.0
                     new CodeMatch(i => i.opcode == OpCodes.Ldloc_0),
-                    // IL_012a: ble.s IL_012f
+                    // IL_0191: ble.s IL_012f
                     new CodeMatch(i => i.opcode == OpCodes.Ble_S),
-                    // IL_012c: ldloc.s 4
+                    // IL_0193: ldloc.s 4
                     new CodeMatch(i => i.opcode == OpCodes.Ldloc_S)
                 };
 
@@ -285,23 +289,23 @@ namespace DuneRef_PeopleMover
             try
             {
                 CodeMatch[] desiredInstructions = new CodeMatch[]{
-                    // IL_006a: ldloc.1
-                    new CodeMatch(i => i.opcode == OpCodes.Ldloc_1),
-                    // IL_006b: brfalse.s IL_0078
+                    // IL_0073: ldloc.2
+                    new CodeMatch(i => i.opcode == OpCodes.Ldloc_2),
+                    // IL_0074: brfalse.s IL_0081
                     new CodeMatch(i => i.opcode == OpCodes.Brfalse_S),
-                    // IL_006d: ldloc.0
+                    // IL_0076: ldloc.0
                     new CodeMatch(i => i.opcode == OpCodes.Ldloc_0),
-                    // IL_006e: ldloc.1
-                    new CodeMatch(i => i.opcode == OpCodes.Ldloc_1),
-                    // IL_006f: ldarg.0
+                    // IL_0077: ldloc.2
+                    new CodeMatch(i => i.opcode == OpCodes.Ldloc_2),
+                    // IL_0078: ldarg.0
                     new CodeMatch(i => i.opcode == OpCodes.Ldarg_0),
-                    // IL_0070: callvirt instance uint16 Verse.Building::PathWalkCostFor(class Verse.Pawn)
+                    // IL_0079: callvirt instance uint16 Verse.Building::PathWalkCostFor(class Verse.Pawn)
                     new CodeMatch(i => i.opcode == OpCodes.Callvirt),
-                    // IL_0075: conv.r4
+                    // IL_007e: conv.r4
                     new CodeMatch(i => i.opcode == OpCodes.Conv_R4),
-                    // IL_0076: add
+                    // IL_007f: add
                     new CodeMatch(i => i.opcode == OpCodes.Add),
-                    // IL_0077: stloc.0
+                    // IL_0080: stloc.0
                     new CodeMatch(i => i.opcode == OpCodes.Stloc_0)
                 };
 
@@ -312,7 +316,7 @@ namespace DuneRef_PeopleMover
                     .RemoveInstructions(8)
                     .Insert(new CodeInstruction(OpCodes.Ldloc_0))
                     .Advance(1)
-                    .Insert(new CodeInstruction(OpCodes.Ldloc_1))
+                    .Insert(new CodeInstruction(OpCodes.Ldloc_2))
                     .Advance(1)
                     .Insert(new CodeInstruction(OpCodes.Ldarg_0))
                     .Advance(1)
